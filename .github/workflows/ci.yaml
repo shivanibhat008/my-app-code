@@ -23,6 +23,9 @@ jobs:
             frontend:
               - 'frontend/**'
               - '.github/workflows/**'
+            migrations:
+              - 'migrations/**'
+              - '.github/workflows/**'
 
   build-and-deploy:
     needs: detect-changes
