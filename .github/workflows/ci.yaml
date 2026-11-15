@@ -19,8 +19,10 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              - '.github/workflows/**'
             frontend:
               - 'frontend/**'
+              - '.github/workflows/**'
 
   build-and-deploy:
     needs: detect-changes
