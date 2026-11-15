@@ -147,5 +147,6 @@ jobs:
               "client_payload": { 
                 "component": "${{ matrix.component }}", 
                 "image_tag": "${{ steps.meta.outputs.tag }}" 
+                "commit_sha": "${{ github.sha }}"
               }
             }'
