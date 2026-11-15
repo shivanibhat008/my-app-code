@@ -1,50 +1,120 @@
+name: Selective Build & Deploy
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
 jobs:
-  ci-pipeline:
+  detect-changes:
     runs-on: ubuntu-latest
+    outputs:
+      changes: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  build-and-deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.changes != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
+      fail-fast: false 
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required by SonarQube for accurate code analysis
+          fetch-depth: 0 # Needed for SonarQube
 
-      # 1. Hadolint: Lints the Dockerfile for best practices
+      # ==========================================
+      # PHASE 1: PR VALIDATION (Runs ONLY on PR)
+      # ==========================================
       - name: Run Hadolint
+        if: github.event_name == 'pull_request'
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: app/Dockerfile
-          failure-threshold: error # Fails the PR if errors are found
+          dockerfile: ${{ matrix.component }}/Dockerfile
 
-      # 2. SonarQube (SonarCloud): Static Code Analysis
       - name: SonarQube Scan
-        #uses: SonarSource/sonarcloud-github-action@master
+        if: github.event_name == 'pull_request'
+        uses: SonarSource/sonarcloud-github-action@master
         #env:
-          #GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Provided automatically by GitHub
-          #SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}    # You must add this to GitHub Secrets
+          #GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          #SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         #with:
           #args: >
-           # -Dsonar.projectKey=YOUR_PROJECT_KEY
-           # -Dsonar.organization=YOUR_ORGANIZATION_KEY
-           # -Dsonar.sources=app/
-           # -Dsonar.python.version=3.12
-          run: echo "Scanned via SonarQube"
+            #-Dsonar.projectKey=YOUR_KEY
+            #-Dsonar.sources=${{ matrix.component }}/
+         run: echo "Paased the sonarQube scan"
 
-
-      # 3. Docker Build: Builds the image locally on the runner
-      - name: Generate Local Image Tag
+      # ==========================================
+      # PHASE 2: BUILD (Runs on both PR & Main)
+      # ==========================================
+      - name: Generate Immutable SHA Tag
         id: meta
-        run: echo "image_tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Build Docker Image (Local Only)
+      - name: Build Docker Image
         run: |
-          docker build -t local-hello-app:${{ steps.meta.outputs.image_tag }} ./app
+          docker build -t local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ./${{ matrix.component }}
 
-      # 4. Trivy: Scans the locally built image for CVEs
-      - name: Run Trivy Vulnerability Scanner
+      # ==========================================
+      # PHASE 3: SCAN (Runs ONLY on PR)
+      # ==========================================
+      - name: Vulnerability Scan (Trivy)
+        if: github.event_name == 'pull_request'
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'local-hello-app:${{ steps.meta.outputs.image_tag }}'
-          format: 'table'
-          exit-code: '1'           # Immediately fails the PR if vulnerabilities are found
-          ignore-unfixed: true     # Prevents failing on CVEs that have no patch available yet
-          vuln-type: 'os,library'
+          image-ref: 'local-${{ matrix.component }}:${{ steps.meta.outputs.tag }}'
           severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      # ==========================================
+      # PHASE 4: PUSH & DEPLOY (Runs ONLY on Main)
+      # ==========================================
+      - name: Login to Docker Hub
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Push Image to Docker Hub
+        if: github.event_name == 'push'
+        run: |
+          docker tag local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ci-cd
+
+      - name: Trigger Dev Deployment Webhook
+        run: |
+          curl -f -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
+            https://api.github.com/repos/${{ github.repository_owner }}/ci-cd/dispatches \
+            -d '{
+              "event_type": "deploy-dev",
+              "client_payload": { 
+                "component": "${{ matrix.component }}", 
+                "image_tag": "${{ steps.meta.outputs.tag }}" 
+              }
+            }'
