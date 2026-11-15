@@ -38,7 +38,7 @@ jobs:
         run: |
           docker build -t local-hello-app:${{ steps.meta.outputs.image_tag }} ./app
 
-      # 4. Trivy: Scans the locally built image for CVEs
+      # 4. Trivy: Scans the locally built docker image for CVEs
       - name: Run Trivy Vulnerability Scanner
         uses: aquasecurity/trivy-action@master
         with:
