@@ -25,11 +25,29 @@ jobs:
             frontend:
               - 'frontend/**'
 
+  pr-title-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce version format in PR Title
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          
+          # Checks for v followed by three number blocks (e.g., v1.1.0)
+          if [[ ! "$PR_TITLE" =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Validation Failed!"
+            echo "Your PR title is: '$PR_TITLE'"
+            echo "It must contain a version format like 'v1.1.0'."
+            echo "Please rename your PR to proceed."
+            exit 1
+          fi
+          echo "Version format correctly detected in PR Title."
+
   # ====================
   # JOB 2: PR Pre-Checks
   # ====================
   pr-checks:
-    needs: detect-changes
+    needs: [detect-changes, pr-title-check]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
     strategy:
@@ -85,7 +103,14 @@ jobs:
 
       - name: Generate Immutable SHA Tag
         id: meta
-        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          VERSION=$(echo "$COMMIT_MSG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)         
+          FINAL_TAG="${VERSION}-sha-${GITHUB_SHA::7}"
+          
+          echo "Extracted Version: $VERSION"
+          echo "Building image with tag: $FINAL_TAG"
+          echo "tag=$FINAL_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Build Docker Image
         run: |
@@ -118,7 +143,7 @@ jobs:
             -H "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
             https://api.github.com/repos/${{ github.repository_owner }}/ci-cd/dispatches \
             -d '{
-              "event_type": "deploy-dev",
+              "event_type": "deploy-to-dev",
               "client_payload": { 
                 "component": "${{ matrix.component }}", 
                 "image_tag": "${{ steps.meta.outputs.tag }}" 
