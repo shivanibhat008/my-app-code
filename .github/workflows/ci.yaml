@@ -142,11 +142,4 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
             https://api.github.com/repos/${{ github.repository_owner }}/ci-cd/dispatches \
-            -d '{
-              "event_type": "deploy-to-dev",
-              "client_payload": { 
-                "component": "${{ matrix.component }}", 
-                "image_tag": "${{ steps.meta.outputs.tag }}" 
-                "commit_sha": "${{ github.sha }}"
-              }
-            }'
+            -d '{"event_type": "deploy-to-dev", "client_payload": {"component": "${{ matrix.component }}", "image_tag": "${{ steps.meta.outputs.tag }}", "commit_sha": "${{ github.sha }}"}}'
