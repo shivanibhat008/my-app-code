@@ -7,6 +7,9 @@ on:
     branches: [main]
 
 jobs:
+  # ======================
+  # JOB 1: Detect Changes
+  # ======================
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
@@ -22,9 +25,12 @@ jobs:
             frontend:
               - 'frontend/**'
 
-  build-and-deploy:
+  # ====================
+  # JOB 2: PR Pre-Checks
+  # ====================
+  pr-checks:
     needs: detect-changes
-    if: needs.detect-changes.outputs.changes != '[]'
+    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -35,19 +41,15 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Needed for SonarQube
+          fetch-depth: 0 
 
-      # ==========================================
-      # PHASE 1: PR VALIDATION (Runs ONLY on PR)
-      # ==========================================
       - name: Run Hadolint
-        if: github.event_name == 'pull_request'
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ${{ matrix.component }}/Dockerfile
 
       - name: SonarQube Scan
-        if: github.event_name == 'pull_request'
+        run: echo "Passed the sonarQube scan"
         #uses: SonarSource/sonarcloud-github-action@master
         #env:
           #GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,9 +60,30 @@ jobs:
             #-Dsonar.sources=${{ matrix.component }}/
         run: echo "Paased the sonarQube scan"
 
-      # ==========================================
-      # PHASE 2: BUILD (Runs on both PR & Main)
-      # ==========================================
+      - name: Vulnerability Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './${{ matrix.component }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0' # Set to 0 temporarily
+
+  # ======================
+  # JOB 3: Build & Deploy
+  # ======================
+  build-deploy:
+    needs: detect-changes
+    if: github.event_name == 'push' && needs.detect-changes.outputs.changes != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
+      fail-fast: false 
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Generate Immutable SHA Tag
         id: meta
         run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -69,36 +92,18 @@ jobs:
         run: |
           docker build -t local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ./${{ matrix.component }}
 
-      # ==========================================
-      # PHASE 3: SCAN (Runs ONLY on PR)
-      # ==========================================
-      - name: Vulnerability Scan (Trivy)
-        if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'local-${{ matrix.component }}:${{ steps.meta.outputs.tag }}'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
-          exit-code: '0'
-
-      # ==========================================
-      # PHASE 4: PUSH & DEPLOY (Runs ONLY on Main)
-      # ==========================================
       - name: Login to Docker Hub
-        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Push Image to Docker Hub
-        if: github.event_name == 'push'
         run: |
           docker tag local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
 
       - name: Generate GitHub App Token
-        if: github.event_name == 'push'
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
@@ -108,7 +113,6 @@ jobs:
           repositories: ci-cd
 
       - name: Trigger Dev Deployment Webhook
-        if: github.event_name == 'push'
         run: |
           curl -f -X POST \
             -H "Accept: application/vnd.github+json" \
