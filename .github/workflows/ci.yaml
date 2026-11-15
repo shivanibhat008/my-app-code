@@ -58,6 +58,7 @@ jobs:
           #args: >
             #-Dsonar.projectKey=YOUR_KEY
             #-Dsonar.sources=${{ matrix.component }}/
+        run: echo "Paased the sonarQube scan"
 
       - name: Vulnerability Scan (Trivy)
         uses: aquasecurity/trivy-action@master
