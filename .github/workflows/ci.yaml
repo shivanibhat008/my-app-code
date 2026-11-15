@@ -56,7 +56,7 @@ jobs:
           #args: >
             #-Dsonar.projectKey=YOUR_KEY
             #-Dsonar.sources=${{ matrix.component }}/
-         run: echo "Paased the sonarQube scan"
+        run: echo "Paased the sonarQube scan"
 
       # ==========================================
       # PHASE 2: BUILD (Runs on both PR & Main)
