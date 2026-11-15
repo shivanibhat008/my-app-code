@@ -47,7 +47,7 @@ jobs:
   # JOB 2: PR Pre-Checks
   # ====================
   pr-checks:
-    needs: detect-changes
+    needs: [detect-changes, pr-title-check]
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
     strategy:
