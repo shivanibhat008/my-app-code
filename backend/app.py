@@ -39,6 +39,13 @@ def home():
                 border-top: 4px solid #06B6D4;
                 max-width: 400px;
             }}
+            .display-img {{
+                width: 150px;
+                height: auto;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                border: 2px solid #475569;
+            }}
             h1 {{
                 margin-top: 0;
                 color: #06B6D4;
@@ -62,6 +69,8 @@ def home():
     </head>
     <body>
         <div class="card">
+            <!-- Ensure your image is inside a folder named 'static' next to app.py -->
+            <img src="/static/deploy_img.png" alt="App Image" class="display-img">
             <h1>!!Hello!!</h1>
             <p>Welcome to the backend side. The deployment pipeline is successfully configured.</p>
             <div class="version-badge">{app_version}</div>
