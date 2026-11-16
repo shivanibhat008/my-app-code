@@ -153,4 +153,5 @@ jobs:
       component: ${{ matrix.component }}
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      CD_REPO_PAT: ${{ secrets.PAT }}
+      CI_APP_ID: ${{ secrets.CI_APP_ID }}
+      CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
