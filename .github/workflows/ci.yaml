@@ -148,7 +148,7 @@ jobs:
       fail-fast: false 
       
     # Calls the reusable workflow natively. Ensure the repo name exactly matches your CD repository.
-    uses: shivanibhat008/ci-cd/.github/workflows/deploy-to-dev.yaml@main
+    uses: shivanibhat008/ci-cd/.github/workflows/deploy-dev.yaml@main
     with:
       base_version: ${{ needs.detect-changes.outputs.version }}
       component: ${{ matrix.component }}
