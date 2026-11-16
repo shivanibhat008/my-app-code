@@ -62,7 +62,7 @@ def home():
     </head>
     <body>
         <div class="card">
-            <h1>Hello!!</h1>
+            <h1>!!Hello!!</h1>
             <p>Welcome to the backend API. The deployment pipeline is successfully configured.</p>
             <div class="version-badge">{app_version}</div>
         </div>
