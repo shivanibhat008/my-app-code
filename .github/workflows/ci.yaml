@@ -139,6 +139,42 @@ jobs:
   # ======================
   # JOB 5: Deploy to Dev
   # ======================
+
+  # ======================
+  # JOB 5A: Deploy DB Migration First
+  # ======================
+  # deploy-db:
+  #   needs: [detect-changes, build-push-docker]
+  #   # Only run this job if 'db-migrations' is in the list of detected changes
+  #   if: github.event_name == 'push' && contains(fromJSON(needs.detect-changes.outputs.changes), 'db-migrations')
+  #   uses: shivanibhat008/ci-cd/.github/workflows/deploy-to-dev.yaml@main
+  #   with:
+  #     base_version: ${{ needs.detect-changes.outputs.version }}
+  #     component: "db-migrations"
+  #   secrets:
+  #     DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  #     CI_APP_ID: ${{ secrets.CI_APP_ID }}
+  #     CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+  # ======================
+  # JOB 5B: Deploy Application Code
+  # ======================
+  # deploy-apps:
+  #   # This job will wait for deploy-db to finish. 
+  #   needs: [detect-changes, build-push-docker, deploy-db]
+    
+  #   # always() ensures this evaluates even if deploy-db was skipped (because no DB changes occurred).
+  #   # It verifies the docker build succeeded, and the DB deploy either succeeded or was cleanly skipped.
+  #   if: |
+  #     always() && 
+  #     needs.build-push-docker.result == 'success' && 
+  #     (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') &&
+  #     needs.detect-changes.outputs.changes != '[]'
+    
+  #   strategy:
+  #     matrix:
+  #       component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
+  #     fail-fast: false
   deploy-dev:
     needs: [detect-changes, build-push-docker]
     if: github.event_name == 'push' && needs.detect-changes.outputs.changes != '[]'
