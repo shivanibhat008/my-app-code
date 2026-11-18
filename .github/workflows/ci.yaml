@@ -192,3 +192,18 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       CI_APP_ID: ${{ secrets.CI_APP_ID }}
       CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+  # - name: Update Jira Ticket & Fetch Fix Version
+  #       id: jira
+  #       uses: ./.github/actions/jira-transition
+  #       with:
+  #         jira-base-url: ${{ vars.JIRA_BASE_URL }}
+  #         jira-user-email: ${{ secrets.JIRA_USER_EMAIL }}
+  #         jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+  #         source-text: "${{ github.event.pull_request.title }} ${{ github.head_ref }}"
+  #         target-status: "In Review"
+
+  #     - name: Use Fetched Fix Version
+  #       run: |
+  #         echo "Jira Issue: ${{ steps.jira.outputs.issue-key }}"
+  #         echo "Jira Fix Version: ${{ steps.jira.outputs.fix-version }}"
