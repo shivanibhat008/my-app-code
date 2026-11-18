@@ -71,7 +71,7 @@ def home():
         <div class="card">
             <!-- Ensure your image is inside a folder named 'static' next to app.py -->
             <img src="/static/deploy_img.png" alt="App Image" class="display-img">
-            <h1>!!Final Test!!</h1>
+            <h1>!! Final Test !!</h1>
             <p>Welcome to the backend side. The deployment pipeline is successfully configured.</p>
             <div class="version-badge">{app_version}</div>
         </div>
