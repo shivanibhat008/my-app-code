@@ -167,6 +167,7 @@ jobs:
   #   # It verifies the docker build succeeded, and the DB deploy either succeeded or was cleanly skipped.
   #   if: |
   #     always() && 
+  #     matrix.component != 'db-migrations' &&
   #     needs.build-push-docker.result == 'success' && 
   #     (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') &&
   #     needs.detect-changes.outputs.changes != '[]'
