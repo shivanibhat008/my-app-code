@@ -175,6 +175,7 @@ jobs:
   #     matrix:
   #       component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
   #     fail-fast: false
+  
   deploy-dev:
     needs: [detect-changes, build-push-docker]
     if: github.event_name == 'push' && needs.detect-changes.outputs.changes != '[]'
@@ -195,7 +196,7 @@ jobs:
 
   # - name: Update Jira Ticket & Fetch Fix Version
   #       id: jira
-  #       uses: ./.github/actions/jira-transition
+  #       uses: shivanibhat008/ci-cd/.github/actions/jira-transition@main
   #       with:
   #         jira-base-url: ${{ vars.JIRA_BASE_URL }}
   #         jira-user-email: ${{ secrets.JIRA_USER_EMAIL }}
