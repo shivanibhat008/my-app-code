@@ -84,6 +84,7 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ${{ matrix.component }}/Dockerfile
+          #config: .github/.hadolint.yaml
 
       - name: SonarQube Scan
         run: echo "Passed the sonarQube scan"
@@ -94,7 +95,9 @@ jobs:
           scan-type: 'fs'
           scan-ref: './${{ matrix.component }}'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          # trivy-config: '.github/trivy.yaml'
+          # trivyignores: '.github/.trivyignore'
+          exit-code: '0' #Changed from 1 to 0 for testing
 
   # ======================
   # JOB 4: Build & Push
