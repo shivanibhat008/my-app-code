@@ -1,0 +1,5 @@
+# .github/CODEOWNERS
+.github/CODEOWNERS  @shivanibhat008
+.hadolint.yaml      @shivanibhat008
+trivy.yaml          @shivanibhat008
+.trivyignore        @shivanibhat008
