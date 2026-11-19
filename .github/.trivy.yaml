@@ -1,0 +1,24 @@
+# severity:
+#   - CRITICAL
+#   - HIGH
+
+# # Only fail on vulnerabilities that actually have an upstream patch available
+# vulnerability:
+#   ignore-unfixed: true
+
+# # Scan for CVEs, hardcoded secrets, and Dockerfile/IaC misconfigurations
+# scan:
+#   scanners:
+#     - vuln
+#     - secret
+#     - misconfig
+#   skip-dirs:
+#     - "**/.venv"
+#     - "**/tests"
+#     - "**/__pycache__"
+#     - "**/node_modules"
+#   skip-files:
+#     - "**/.env.example"
+
+# # Set to 1 once ready to block PR merges on unignored CRITICAL/HIGH findings
+# exit-code: 1
