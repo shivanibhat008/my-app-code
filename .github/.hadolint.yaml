@@ -1,0 +1,21 @@
+# # Fail the build on 'error' or 'warning' (options: error, warning, info, style, ignore)
+# failure-threshold: warning
+
+# # Restrict base images to approved registries (Docker Hub for prototype, ECR for AWS)
+# trustedRegistries:
+#   - docker.io
+#   - 123456789012.dkr.ecr.eu-west-1.amazonaws.com
+
+# # Enforce strict security rules as hard errors
+# override:
+#   error:
+#     - DL3002  # Last USER should not be root (enforces non-root containers)
+#     - DL3006  # Always tag the version of an image explicitly (no :latest)
+#     - DL3020  # Use COPY instead of ADD for files and folders
+
+# # Pragmatic ignores for Python/Flask and Node/Frontend builds
+# ignored:
+#   - DL3008  # Pin versions in apt-get install (often breaks builds when Debian repos rotate)
+#   - DL3018  # Pin versions in apk add (same reason for Alpine-based images)
+#   - DL3013  # Pin versions in pip (safe to ignore if versions are already pinned in requirements.txt)
+#   - DL3042  # Avoid cache directory with pip (optional if using BuildKit cache mounts)
