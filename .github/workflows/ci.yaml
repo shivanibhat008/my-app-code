@@ -30,20 +30,21 @@ jobs:
               - 'backend/**'
             frontend:
               - 'frontend/**'
-              
+
       # Extract the semantic version globally so both build and deploy jobs can inherit it
       - name: Extract Version from Commit Message
         id: get-version
         if: github.event_name == 'push'
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
           VERSION=$(echo "$COMMIT_MSG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
-          
+
           if [ -z "$VERSION" ]; then
             echo "Error: No semantic version found in commit message!"
             exit 1
           fi
-          
+
           echo "Extracted Version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -52,7 +53,6 @@ jobs:
   # ============================================================
   pr-title-check:
     needs: detect-changes
-    # Runs on all PRs to main, and on push to main or hotfix/* when code actually changed
     if: github.event_name == 'pull_request' || needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
     outputs:
@@ -65,14 +65,25 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          
-          if [[ ! "$PR_TITLE" =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+          if [ "$EVENT_NAME" == "pull_request" ]; then
+            SOURCE="PR title"
+            TEXT_TO_CHECK="$PR_TITLE"
+          else
+            SOURCE="commit message"
+            TEXT_TO_CHECK="$COMMIT_MSG"
+          fi
+
+          VERSION=$(echo "$TEXT_TO_CHECK" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+
+          if [ -z "$VERSION" ]; then
             echo "Validation Failed!"
             echo "Your $SOURCE is: '$TEXT_TO_CHECK'"
             echo "It must contain a semantic version format like 'v1.1.0'."
             exit 1
           fi
+
+          echo "Semantic version $VERSION detected in $SOURCE."
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   # ====================
   # JOB 3: PR Pre-Checks
@@ -104,7 +115,6 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ${{ matrix.component }}/Dockerfile
-          #config: .github/.hadolint.yaml
 
       - name: SonarQube Scan
         run: echo "Passed the sonarQube scan"
@@ -115,16 +125,19 @@ jobs:
           scan-type: 'fs'
           scan-ref: './${{ matrix.component }}'
           severity: 'CRITICAL,HIGH'
-          # trivy-config: '.github/trivy.yaml'
-          # trivyignores: '.github/.trivyignore'
-          exit-code: '0' #Changed from 1 to 0 for testing
+          exit-code: '0'
 
   # ======================
   # JOB 4: Build & Push
   # ======================
   build-push-docker:
-    needs: detect-changes
-    if: github.event_name == 'push' && needs.detect-changes.outputs.changes != '[]'
+    needs: [detect-changes, pr-checks]
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.changes != '[]' &&
+      (needs.pr-checks.result == 'success' || needs.pr-checks.result == 'skipped')
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -143,14 +156,15 @@ jobs:
           FINAL_TAG="${BASE_VERSION}-sha-${GITHUB_SHA::7}"
           echo "Building image with tag: $FINAL_TAG"
           echo "tag=$FINAL_TAG" >> "$GITHUB_OUTPUT"
+          echo "**${{ matrix.component }}** image tag: \`${FINAL_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build Docker Image
         run: |
           docker build -t local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ./${{ matrix.component }}
 
-       - name: Scan Built Image Layers (Trivy)
-         uses: aquasecurity/trivy-action@v0.36.0
-         with:
+      - name: Scan Built Image Layers (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
           scan-type: 'image'
           image-ref: 'local-${{ matrix.component }}:${{ steps.meta.outputs.tag }}'
           format: 'table'
@@ -158,7 +172,7 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
-      
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -173,53 +187,14 @@ jobs:
   # ======================
   # JOB 5: Deploy to Dev
   # ======================
-
-  # ======================
-  # JOB 5A: Deploy DB Migration First
-  # ======================
-  # deploy-db:
-  #   needs: [detect-changes, build-push-docker]
-  #   # Only run this job if 'db-migrations' is in the list of detected changes
-  #   if: github.event_name == 'push' && contains(fromJSON(needs.detect-changes.outputs.changes), 'db-migrations')
-  #   uses: shivanibhat008/ci-cd/.github/workflows/deploy-to-dev.yaml@main
-  #   with:
-  #     base_version: ${{ needs.detect-changes.outputs.version }}
-  #     component: "db-migrations"
-  #   secrets:
-  #     DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-  #     CI_APP_ID: ${{ secrets.CI_APP_ID }}
-  #     CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
-
-  # ======================
-  # JOB 5B: Deploy Application Code
-  # ======================
-  # deploy-apps:
-  #   # This job will wait for deploy-db to finish. 
-  #   needs: [detect-changes, build-push-docker, deploy-db]
-    
-  #   # always() ensures this evaluates even if deploy-db was skipped (because no DB changes occurred).
-  #   # It verifies the docker build succeeded, and the DB deploy either succeeded or was cleanly skipped.
-  #   if: |
-  #     always() && 
-  #     matrix.component != 'db-migrations' &&
-  #     needs.build-push-docker.result == 'success' && 
-  #     (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') &&
-  #     needs.detect-changes.outputs.changes != '[]'
-    
-  #   strategy:
-  #     matrix:
-  #       component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
-  #     fail-fast: false
-  
   deploy-dev:
     needs: [detect-changes, build-push-docker]
-    if: github.event_name == 'push' && needs.detect-changes.outputs.changes != '[]'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-changes.outputs.changes != '[]'
     strategy:
       matrix:
         component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
-      fail-fast: false 
-      
-    # Calls the reusable workflow natively. Ensure the repo name exactly matches your CD repository.
+      fail-fast: false
+
     uses: shivanibhat008/ci-cd/.github/workflows/deploy-dev.yaml@main
     with:
       base_version: ${{ needs.detect-changes.outputs.version }}
@@ -229,7 +204,7 @@ jobs:
       CI_APP_ID: ${{ secrets.CI_APP_ID }}
       CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
 
-  # - name: Update Jira Ticket & Fetch Fix Version
+    # - name: Update Jira Ticket & Fetch Fix Version
   #       id: jira
   #       uses: shivanibhat008/ci-cd/.github/actions/jira-transition@main
   #       with:
