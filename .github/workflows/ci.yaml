@@ -109,7 +109,8 @@ jobs:
     strategy:
       matrix:
         component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
-      fail-fast: false
+      fail-fast: false 
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
