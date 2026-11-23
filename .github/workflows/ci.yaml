@@ -4,9 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches:
-      - main
-      - 'hotfix/*'
+    branches: [main]
 
 jobs:
   # ======================
@@ -16,11 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changes: ${{ steps.filter.outputs.changes }}
+      version: ${{ steps.get-version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -29,80 +25,69 @@ jobs:
               - 'backend/**'
             frontend:
               - 'frontend/**'
-
-  # ============================================================
-  # JOB 2: Version Format Check (PR Title on PRs, Commit on Push)
-  # ============================================================
-  pr-title-check:
-    needs: detect-changes
-    # Runs on all PRs to main, and on push to main or hotfix/* when code actually changed
-    if: github.event_name == 'pull_request' || needs.detect-changes.outputs.changes != '[]'
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.validate-version.outputs.version }}
-    steps:
-      - name: Enforce semantic version format
-        id: validate-version
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
+              
+      # Extract the semantic version globally so both build and deploy jobs can inherit it
+      - name: Extract Version from Commit Message
+        id: get-version
+        if: github.event_name == 'push'
         run: |
-          if [ "$EVENT_NAME" == "pull_request" ]; then
-            TEXT_TO_CHECK="$PR_TITLE"
-            SOURCE="PR Title"
-          else
-            # On hotfix/* (and main) push events, there is no PR object—validate the commit message
-            TEXT_TO_CHECK="$COMMIT_MSG"
-            SOURCE="Commit Message"
-          fi
-
-          VERSION=$(echo "$TEXT_TO_CHECK" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)
-
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          VERSION=$(echo "$COMMIT_MSG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+          
           if [ -z "$VERSION" ]; then
-            echo "Validation Failed!"
-            echo "Your $SOURCE is: '$TEXT_TO_CHECK'"
-            echo "It must contain a semantic version format like 'v1.1.0'."
+            echo "Error: No semantic version found in commit message!"
             exit 1
           fi
-
-          echo "Version '$VERSION' correctly detected in $SOURCE."
+          
+          echo "Extracted Version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-  # ============================================
-  # JOB 3: Pre-Checks (PRs to main AND hotfix/*)
-  # ============================================
+  # ====================
+  # JOB 2: PR Title Check
+  # ====================
+  pr-title-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce version format in PR Title
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          
+          if [[ ! "$PR_TITLE" =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Validation Failed!"
+            echo "Your PR title is: '$PR_TITLE'"
+            echo "It must contain a version format like 'v1.1.0'."
+            echo "Please rename your PR to proceed."
+            exit 1
+          fi
+          echo "Version format correctly detected in PR Title."
+
+  # ====================
+  # JOB 3: PR Pre-Checks
+  # ====================
   pr-checks:
     needs: [detect-changes, pr-title-check]
-    if: |
-      needs.detect-changes.outputs.changes != '[]' &&
-      (
-        github.event_name == 'pull_request' ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/hotfix/'))
-      )
+    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
-      fail-fast: false
+      fail-fast: false 
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Run Unit Tests
-        run: echo "Running unit tests for ${{ matrix.component }}"
+          fetch-depth: 0 
 
       - name: Run Hadolint
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ${{ matrix.component }}/Dockerfile
-          # config: .github/.hadolint.yaml
+          #config: .github/.hadolint.yaml
 
       - name: SonarQube Scan
-        run: echo "Passed the SonarQube scan"
+        run: echo "Passed the sonarQube scan"
 
       - name: Vulnerability Scan (Trivy)
         uses: aquasecurity/trivy-action@master
@@ -112,28 +97,19 @@ jobs:
           severity: 'CRITICAL,HIGH'
           # trivy-config: '.github/trivy.yaml'
           # trivyignores: '.github/.trivyignore'
-          exit-code: '0' # Changed from 1 to 0 for testing
+          exit-code: '0' #Changed from 1 to 0 for testing
 
-  # ==========================================================
-  # JOB 4: Build & Push (main after merge, hotfix/* after checks)
-  # ==========================================================
+  # ======================
+  # JOB 4: Build & Push
+  # ======================
   build-push-docker:
-    needs: [detect-changes, pr-title-check, pr-checks]
-    if: |
-      !cancelled() &&
-      github.event_name == 'push' &&
-      needs.detect-changes.result == 'success' &&
-      needs.pr-title-check.result == 'success' &&
-      needs.detect-changes.outputs.changes != '[]' &&
-      (
-        (github.ref == 'refs/heads/main' && needs.pr-checks.result == 'skipped') ||
-        (startsWith(github.ref, 'refs/heads/hotfix/') && needs.pr-checks.result == 'success')
-      )
+    needs: detect-changes
+    if: github.event_name == 'push' && needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
-      fail-fast: false
+      fail-fast: false 
 
     steps:
       - name: Checkout Code
@@ -142,7 +118,7 @@ jobs:
       - name: Construct Final Tag
         id: meta
         env:
-          BASE_VERSION: ${{ needs.pr-title-check.outputs.version }}
+          BASE_VERSION: ${{ needs.detect-changes.outputs.version }}
         run: |
           FINAL_TAG="${BASE_VERSION}-sha-${GITHUB_SHA::7}"
           echo "Building image with tag: $FINAL_TAG"
@@ -152,7 +128,7 @@ jobs:
         run: |
           docker build -t local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ./${{ matrix.component }}
 
-      # - name: Scan Built Image Layers (Trivy)
+       # - name: Scan Built Image Layers (Trivy)
       #   uses: aquasecurity/trivy-action@v0.36.0
       #   with:
       #     scan-type: 'image'
@@ -162,7 +138,7 @@ jobs:
       #     ignore-unfixed: true
       #     severity: 'CRITICAL,HIGH'
       #     exit-code: '1'
-
+      
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -174,21 +150,76 @@ jobs:
           docker tag local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.component }}:${{ steps.meta.outputs.tag }}
 
-  # =====================================
-  # JOB 5: Deploy to Dev (main branch ONLY)
-  # =====================================
+  # ======================
+  # JOB 5: Deploy to Dev
+  # ======================
+
+  # ======================
+  # JOB 5A: Deploy DB Migration First
+  # ======================
+  # deploy-db:
+  #   needs: [detect-changes, build-push-docker]
+  #   # Only run this job if 'db-migrations' is in the list of detected changes
+  #   if: github.event_name == 'push' && contains(fromJSON(needs.detect-changes.outputs.changes), 'db-migrations')
+  #   uses: shivanibhat008/ci-cd/.github/workflows/deploy-to-dev.yaml@main
+  #   with:
+  #     base_version: ${{ needs.detect-changes.outputs.version }}
+  #     component: "db-migrations"
+  #   secrets:
+  #     DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  #     CI_APP_ID: ${{ secrets.CI_APP_ID }}
+  #     CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+  # ======================
+  # JOB 5B: Deploy Application Code
+  # ======================
+  # deploy-apps:
+  #   # This job will wait for deploy-db to finish. 
+  #   needs: [detect-changes, build-push-docker, deploy-db]
+    
+  #   # always() ensures this evaluates even if deploy-db was skipped (because no DB changes occurred).
+  #   # It verifies the docker build succeeded, and the DB deploy either succeeded or was cleanly skipped.
+  #   if: |
+  #     always() && 
+  #     matrix.component != 'db-migrations' &&
+  #     needs.build-push-docker.result == 'success' && 
+  #     (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') &&
+  #     needs.detect-changes.outputs.changes != '[]'
+    
+  #   strategy:
+  #     matrix:
+  #       component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
+  #     fail-fast: false
+  
   deploy-dev:
-    needs: [detect-changes, pr-title-check, build-push-docker]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-changes.outputs.changes != '[]'
+    needs: [detect-changes, build-push-docker]
+    if: github.event_name == 'push' && needs.detect-changes.outputs.changes != '[]'
     strategy:
       matrix:
         component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
-      fail-fast: false
+      fail-fast: false 
+      
+    # Calls the reusable workflow natively. Ensure the repo name exactly matches your CD repository.
     uses: shivanibhat008/ci-cd/.github/workflows/deploy-dev.yaml@main
     with:
-      base_version: ${{ needs.pr-title-check.outputs.version }}
+      base_version: ${{ needs.detect-changes.outputs.version }}
       component: ${{ matrix.component }}
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       CI_APP_ID: ${{ secrets.CI_APP_ID }}
       CI_APP_PRIVATE_KEY: ${{ secrets.CI_APP_PRIVATE_KEY }}
+
+  # - name: Update Jira Ticket & Fetch Fix Version
+  #       id: jira
+  #       uses: shivanibhat008/ci-cd/.github/actions/jira-transition@main
+  #       with:
+  #         jira-base-url: ${{ vars.JIRA_BASE_URL }}
+  #         jira-user-email: ${{ secrets.JIRA_USER_EMAIL }}
+  #         jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+  #         source-text: "${{ github.event.pull_request.title }} ${{ github.head_ref }}"
+  #         target-status: "In Review"
+
+  #     - name: Use Fetched Fix Version
+  #       run: |
+  #         echo "Jira Issue: ${{ steps.jira.outputs.issue-key }}"
+  #         echo "Jira Fix Version: ${{ steps.jira.outputs.fix-version }}"
