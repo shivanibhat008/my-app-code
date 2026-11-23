@@ -127,7 +127,7 @@ jobs:
         run: |
           docker build -t local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ./${{ matrix.component }}
 
-       - name: Scan Built Image Layers (Trivy)
+      - name: Scan Built Image Layers (Trivy)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'image'
