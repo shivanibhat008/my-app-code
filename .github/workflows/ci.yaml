@@ -66,7 +66,7 @@ jobs:
   # JOB 3: PR Pre-Checks
   # ====================
   pr-checks:
-    needs: [detect-changes, pr-title-check]
+    needs: detect-changes
     if: github.event_name == 'push' && needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
     strategy:
