@@ -1,0 +1,15 @@
+# # ==============================================================================
+# # Trivy Ignore File — Include justification and an expiry date for every entry
+# # ==============================================================================
+
+# # Example 1: Accepted risk / No fix available yet in base OS package
+# # Justification: Affects unused CLI utility in Debian slim; mitigated by non-root user.
+# CVE-2023-45853 exp:2027-03-01
+
+# # Example 2: False positive in dev/test dependency
+# # Justification: Package only used during local pytest runs, not shipped in production image.
+# CVE-2024-12345 exp:2027-02-15
+
+# # Example 3: Suppress a specific Dockerfile/IaC misconfiguration check if intentional
+# # DS002: Image user should not be 'root' (e.g., if a specific init/migration container requires it)
+# # DS002
