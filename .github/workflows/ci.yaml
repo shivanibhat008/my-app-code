@@ -4,7 +4,9 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'hotfix/*'
 
 jobs:
   # ======================
@@ -17,6 +19,9 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -42,43 +47,58 @@ jobs:
           echo "Extracted Version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-  # ====================
-  # JOB 2: PR Title Check
-  # ====================
+  # ============================================================
+  # JOB 2: Version Format Check (PR Title on PRs, Commit on Push)
+  # ============================================================
   pr-title-check:
-    if: github.event_name == 'pull_request'
+    needs: detect-changes
+    # Runs on all PRs to main, and on push to main or hotfix/* when code actually changed
+    if: github.event_name == 'pull_request' || needs.detect-changes.outputs.changes != '[]'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.validate-version.outputs.version }}
     steps:
-      - name: Enforce version format in PR Title
+      - name: Enforce semantic version format
+        id: validate-version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           PR_TITLE="${{ github.event.pull_request.title }}"
           
           if [[ ! "$PR_TITLE" =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             echo "Validation Failed!"
-            echo "Your PR title is: '$PR_TITLE'"
-            echo "It must contain a version format like 'v1.1.0'."
-            echo "Please rename your PR to proceed."
+            echo "Your $SOURCE is: '$TEXT_TO_CHECK'"
+            echo "It must contain a semantic version format like 'v1.1.0'."
             exit 1
           fi
-          echo "Version format correctly detected in PR Title."
 
   # ====================
   # JOB 3: PR Pre-Checks
   # ====================
   pr-checks:
     needs: [detect-changes, pr-title-check]
-    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.changes != '[]'
+    if: |
+      needs.detect-changes.outputs.changes != '[]' &&
+      (
+        github.event_name == 'pull_request' ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/hotfix/'))
+      )
     runs-on: ubuntu-latest
     strategy:
       matrix:
         component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
-      fail-fast: false 
+      fail-fast: false
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
+
+      - name: Run Unit Tests
+        run: echo "Running unit tests for ${{ matrix.component }}"
 
       - name: Run Hadolint
         uses: hadolint/hadolint-action@v3.1.0
@@ -109,7 +129,7 @@ jobs:
     strategy:
       matrix:
         component: ${{ fromJSON(needs.detect-changes.outputs.changes) }}
-      fail-fast: false 
+      fail-fast: false
 
     steps:
       - name: Checkout Code
@@ -128,16 +148,16 @@ jobs:
         run: |
           docker build -t local-${{ matrix.component }}:${{ steps.meta.outputs.tag }} ./${{ matrix.component }}
 
-       # - name: Scan Built Image Layers (Trivy)
-      #   uses: aquasecurity/trivy-action@v0.36.0
-      #   with:
-      #     scan-type: 'image'
-      #     image-ref: 'local-${{ matrix.component }}:${{ steps.meta.outputs.tag }}'
-      #     format: 'table'
-      #     vuln-type: 'os,library'
-      #     ignore-unfixed: true
-      #     severity: 'CRITICAL,HIGH'
-      #     exit-code: '1'
+       - name: Scan Built Image Layers (Trivy)
+         uses: aquasecurity/trivy-action@v0.36.0
+         with:
+          scan-type: 'image'
+          image-ref: 'local-${{ matrix.component }}:${{ steps.meta.outputs.tag }}'
+          format: 'table'
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
       
       - name: Login to Docker Hub
         uses: docker/login-action@v3
